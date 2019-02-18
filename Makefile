@@ -10,6 +10,7 @@ BUILD?=-dev
 all: dev
 
 dev: build
+	@echo "Starting..."
 	@./$(APP)
 
 deps:
@@ -24,6 +25,7 @@ build: clean deps
 	@echo "Built $$(./$(APP) -v)"
 
 image:
+	@echo "-> Building Docker image..."
 	@docker build --build-arg TAG=$(TAG) --build-arg BUILD=$(BUILD) -t $(REPO):$(TAG) .
 	@echo "Image created: $(REPO):$(TAG)"
 

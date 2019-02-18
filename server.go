@@ -19,6 +19,9 @@ import (
 	"github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
 	"github.com/julienschmidt/httprouter"
+
+	// auth/sessions
+	"github.com/gorilla/sessions"
 )
 
 // Counters ...
@@ -78,6 +81,67 @@ func (s *Server) render(name string, w http.ResponseWriter, ctx interface{}) {
 	}
 }
 
+/* LOGIN STUFF */
+
+//Store the cookie store which is going to store session data in the cookie
+var Store = sessions.NewCookieStore([]byte("secret-password"))
+
+//IsLoggedIn will check if the user has an active session and return True
+func IsLoggedIn(r *http.Request) bool {
+    session, _ := Store.Get(r, "session")
+    if session.Values["loggedin"] == "true" {
+        return true
+    }
+    return false
+}
+
+func (s *Server) LoginHandler() httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		s.counters.Inc("n_login")
+		// var uname = r.FormValue("Username")
+		// var pass = r.FormValue("Password")
+
+		// copypasta
+		session, err := sessions.Store.Get(Store, r, "session")
+
+		if err != nil {
+			s.render("login", w, nil)
+			// in case of error during 
+			// fetching session info, execute login template
+			} else {
+			isLoggedIn := session.Values["loggedin"]
+			if isLoggedIn != "true" {
+				if r.Method == "POST" {
+					if r.FormValue("pass") == "***REMOVED***" && r.FormValue("uname") == "***REMOVED***" {
+						session.Values["loggedin"] = "true"
+						session.Save(r, w)
+						http.Redirect(w, r, "/", http.StatusFound)
+						return
+					}else{
+						http.Redirect(w, r, "/login", http.StatusFound)
+					}
+				} else if r.Method == "GET" {
+					s.render("login", w, nil)
+				}
+			} else {
+				http.Redirect(w, r, "/", http.StatusFound)
+			}
+		}
+	}
+}
+
+func (s *Server) LogoutHandler() httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		session, err := sessions.Store.Get(Store, r, "session")
+    	if err == nil { //If there is no error, then remove session
+			if session.Values["loggedin"] != "false" {
+				session.Values["loggedin"] = "false"
+				session.Save(r, w)
+			}
+    	}
+    	http.Redirect(w, r, "/", 302) 
+	}
+}
 // IndexHandler ...
 func (s *Server) IndexHandler() httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -111,16 +175,20 @@ func (s *Server) IndexHandler() httprouter.Handle {
 			s.render("index", w, nil)
 		} else {
 			if command := LookupCommand(cmd); command != nil {
-				err := command.Exec(w, r, args)
-				if err != nil {
-					http.Error(
-						w,
-						fmt.Sprintf(
-							"Error processing command %s: %s",
-							command.Name(), err,
-						),
-						http.StatusInternalServerError,
-					)
+				if IsLoggedIn(r) {
+					err := command.Exec(w, r, args)
+					if err != nil {
+						http.Error(
+							w,
+							fmt.Sprintf(
+								"Error processing command %s: %s",
+								command.Name(), err,
+							),
+							http.StatusInternalServerError,
+						)
+					}
+				} else {
+					http.Redirect(w, r, "/login", 302)
 				}
 			} else if bookmark, ok := LookupBookmark(cmd); ok {
 				q := strings.Join(args, " ")
@@ -169,10 +237,19 @@ func (s *Server) OpenSearchHandler() httprouter.Handle {
 	}
 }
 
+func (s *Server) StaticHandler() httprouter.Handle{
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+		var q = r.URL.Path
+		w.Header().Set("Content-Type", "text/css")
+
+		w.Write([]byte(rice.MustFindBox("templates").MustString(q)))
+	}
+}
+
 // StatsHandler ...
 func (s *Server) StatsHandler() httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		
 		bs, err := json.Marshal(s.stats.Data())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -197,12 +274,18 @@ func (s *Server) ListenAndServe() {
 	)
 }
 
+
 func (s *Server) initRoutes() {
 	s.router.Handler("GET", "/debug/metrics", exp.ExpHandler(s.counters.r))
+	// s.router.GET("/static/style.css", s.StaticHandler())
+	s.router.ServeFiles("/static/*filepath", /*http.Dir("templates")*/ rice.MustFindBox("templates").HTTPBox())
 	s.router.GET("/debug/stats", s.StatsHandler())
 
 	s.router.GET("/", s.IndexHandler())
 	s.router.POST("/", s.IndexHandler())
+	s.router.GET("/login", s.LoginHandler())
+	s.router.POST("/login", s.LoginHandler())
+	s.router.GET("/logout", s.LogoutHandler())
 	s.router.GET("/help", s.HelpHandler())
 	s.router.GET("/opensearch.xml", s.OpenSearchHandler())
 }
@@ -226,7 +309,7 @@ func NewServer(bind string, config Config) *Server {
 		counters: NewCounters(),
 		stats:    stats.New(),
 	}
-
+	
 	// Templates
 	box := rice.MustFindBox("templates")
 
@@ -238,8 +321,13 @@ func NewServer(bind string, config Config) *Server {
 	template.Must(helpTemplate.Parse(box.MustString("help.html")))
 	template.Must(helpTemplate.Parse(box.MustString("base.html")))
 
+	loginTemplate := template.New("login")
+	template.Must(loginTemplate.Parse(box.MustString("login.html")))
+	template.Must(loginTemplate.Parse(box.MustString("base.html")))
+
 	server.templates.Add("index", indexTemplate)
 	server.templates.Add("help", helpTemplate)
+	server.templates.Add("login", loginTemplate)
 
 	server.initRoutes()
 
