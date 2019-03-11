@@ -152,9 +152,15 @@ func (s *Server) IndexHandler() httprouter.Handle {
 		)
 
 		s.counters.Inc("n_index")
-
+		var test = strings.Split(r.URL.Path, "/");
+		if len(test) < 3{
+			q = "";
+		}else{
+			q=test[2];
+		}
 		// Query ?q=
-		q = r.URL.Query().Get("q")
+		// q = r.URL.Query().Get("q")
+		// q = 
 
 		// Form name=q
 		if q == "" {
@@ -282,6 +288,7 @@ func (s *Server) initRoutes() {
 	s.router.GET("/debug/stats", s.StatsHandler())
 
 	s.router.GET("/", s.IndexHandler())
+	s.router.GET("/q/:link", s.IndexHandler())
 	s.router.POST("/", s.IndexHandler())
 	s.router.GET("/login", s.LoginHandler())
 	s.router.POST("/login", s.LoginHandler())
