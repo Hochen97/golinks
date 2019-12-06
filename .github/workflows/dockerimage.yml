@@ -9,6 +9,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v1
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag golinks:$(date +%s)
+    - name: Publish Docker
+      uses: elgohr/Publish-Docker-Github-Action@2.9
+      with:
+        # The name of the image you would like to push
+        name: hochen97/golinks/golinks
+        # The login username for the registry
+        username: ${{ secrets.DOCKER_USERNAME }}
+        # The login password for the registry
+        password: ${{ secrets.DOCKER_USERNAME }}
+        # Use registry for pushing to a custom registry
+        registry: docker.pkg.github.com
