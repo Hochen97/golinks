@@ -112,7 +112,7 @@ func (s *Server) LoginHandler() httprouter.Handle {
 			isLoggedIn := session.Values["loggedin"]
 			if isLoggedIn != "true" {
 				if r.Method == "POST" {
-					if r.FormValue("pass") == "***REMOVED***" && r.FormValue("uname") == "***REMOVED***" {
+					if r.FormValue("pass") == "SECRET" && r.FormValue("uname") == "SECRET" {
 						session.Values["loggedin"] = "true"
 						session.Save(r, w)
 						http.Redirect(w, r, "/", http.StatusFound)
